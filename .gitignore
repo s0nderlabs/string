@@ -7,3 +7,7 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 contracts/foundry.lock
+
+# Cloudflare Workers
+backend/.dev.vars
+backend/.wrangler/

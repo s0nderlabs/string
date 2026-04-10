@@ -1,0 +1,29 @@
+name = "string-backend"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+CHAIN_ID = "133"
+RPC_URL = "https://testnet.hsk.xyz"
+USDC_ADDRESS = "0x18ec8e93627c893ae61ae0491c1c98769fd4dfa2"
+ZKRELAY_ADDRESS = "0xaB194c8030A81FaE84B197CAb238Ed18A5108050"
+REGISTRY_ADDRESS = "0x2d8E586847565AA4C517f177d922A37286e9d1F8"
+ESCROW_ADDRESS = "0x66B51d3150d461424174F55Fda61363a2e6cc916"
+FEE_RECIPIENT = "0xC635e6Eb223aE14143E23cEEa9440bC773dc87Ec"
+MESSAGE_PRICE = "1000"
+FILE_UPLOAD_PRICE = "5000"
+FAUCET_AMOUNT = "1000000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "string-db"
+database_id = "f9dc66ae-628f-4d1f-81cd-38d3ad25f769"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability.logs]
+enabled = true
+invocation_logs = true
