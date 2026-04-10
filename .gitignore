@@ -1,3 +1,9 @@
 node_modules/
 /test/
 CLAUDE.md
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/foundry.lock
