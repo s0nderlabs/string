@@ -1,0 +1,19 @@
+{
+  "name": "@string/plugin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "eciesjs": "^0.5.0",
+    "viem": "^2.47.0",
+    "snarkjs": "^0.7.6",
+    "circomlibjs": "^0.1.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.9.0"
+  }
+}
