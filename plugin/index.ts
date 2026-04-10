@@ -2,6 +2,9 @@
 import { deriveIdentity } from './src/crypto.js'
 import { state } from './src/state.js'
 import { connectMcp } from './src/server.js'
+import { loadBookmark } from './src/bookmark.js'
+import { isRegistered, getUsdcBalance } from './src/chain.js'
+import * as api from './src/api.js'
 
 process.on('unhandledRejection', (err) => {
   process.stderr.write(`string: unhandled rejection: ${err}\n`)
@@ -17,21 +20,64 @@ if (!privateKey) {
   process.exit(1)
 }
 
+const backendUrl = process.env.STRING_BACKEND_URL
+if (!backendUrl) {
+  process.stderr.write('string: STRING_BACKEND_URL is required\n')
+  process.exit(1)
+}
+
 state.privateKey = privateKey as `0x${string}`
-state.rpcUrl = process.env.STRING_RPC_URL || 'https://rpc.ankr.com/eth_sepolia'
-state.wssUrl = process.env.STRING_WSS_URL || ''
-state.relayAddress = (process.env.STRING_RELAY_ADDRESS || '0x6EC3A52057c98234Bb7D63f3eB1Db92eFa2f63dE') as `0x${string}`
-state.verifierAddress = (process.env.STRING_VERIFIER_ADDRESS || '0x443f4aBf3867eA448143c04d5606B6E258c2d5Bd') as `0x${string}`
-state.chainId = parseInt(process.env.STRING_CHAIN_ID || '11155111')
+state.backendUrl = backendUrl
+state.rpcUrl = process.env.STRING_RPC_URL || 'https://testnet.hsk.xyz'
+state.relayAddress = (process.env.STRING_RELAY_ADDRESS || '0xaB194c8030A81FaE84B197CAb238Ed18A5108050') as `0x${string}`
+state.escrowAddress = (process.env.STRING_ESCROW_ADDRESS || '0x66B51d3150d461424174F55Fda61363a2e6cc916') as `0x${string}`
+state.registryAddress = (process.env.STRING_REGISTRY_ADDRESS || '0x2d8E586847565AA4C517f177d922A37286e9d1F8') as `0x${string}`
+state.usdcAddress = (process.env.STRING_USDC_ADDRESS || '0x18ec8e93627c893ae61ae0491c1c98769fd4dfa2') as `0x${string}`
+state.feeRecipient = (process.env.STRING_FEE_RECIPIENT || '0xC635e6Eb223aE14143E23cEEa9440bC773dc87Ec') as `0x${string}`
+state.chainId = parseInt(process.env.STRING_CHAIN_ID || '133')
+state.judgeAddress = process.env.STRING_JUDGE_ADDRESS || ''
+state.messagePriceMicros = process.env.STRING_MESSAGE_PRICE || '1000'
+state.filePriceMicros = process.env.STRING_FILE_PRICE || '5000'
 
 const { address, account } = deriveIdentity(state.privateKey)
 state.address = address
-state.account = account
+state.account = account as any
+state.publicKey = account.publicKey
+
+// ── Startup identity check ──
+// Check on-chain registration + USDC balance + backend profile (updates last_seen → online)
+try {
+  const [onChainRegistered, balance, profile] = await Promise.all([
+    isRegistered(address as `0x${string}`),
+    getUsdcBalance(address as `0x${string}`),
+    api.getAgent(address), // also updates last_seen → agent shows online
+  ])
+
+  state.registered = onChainRegistered
+  state.usdcBalance = (Number(balance) / 1_000_000).toFixed(2)
+
+  if (profile) {
+    state.agentName = (profile as any).name || ''
+    state.skills = (profile as any).skills || []
+    state.description = (profile as any).description || ''
+  }
+
+  process.stderr.write(`string: ${state.registered ? `registered as "${state.agentName}"` : 'NOT registered'} | ${state.usdcBalance} USDC.e\n`)
+} catch (err) {
+  process.stderr.write(`string: identity check failed (non-fatal): ${err}\n`)
+}
+
+// Load block bookmark for catch-up
+const savedBlock = loadBookmark(address)
+if (savedBlock) {
+  process.stderr.write(`string: resuming from block ${savedBlock}\n`)
+}
 
 process.stderr.write(`string: agent ${address}\n`)
+process.stderr.write(`string: backend ${state.backendUrl}\n`)
 
 // Connect MCP
-await connectMcp()
+await connectMcp(savedBlock)
 
 // Shutdown handling
 process.stdin.resume()

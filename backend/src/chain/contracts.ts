@@ -1,6 +1,4 @@
 import { parseAbi, encodeFunctionData } from "viem";
-import { getTxQueue } from "./queue";
-import { getPublicClient, getWalletClient } from "./client";
 import type { Env } from "../types";
 
 export const ZKRELAY_ABI = parseAbi([
@@ -30,23 +28,38 @@ export const USDC_ABI = parseAbi([
   "function balanceOf(address) view returns (uint256)",
 ]);
 
+/**
+ * Submit a transaction through the TxQueue Durable Object.
+ * All hot wallet transactions are serialized through a single DO instance,
+ * eliminating nonce collisions across CF Worker isolates.
+ */
 export async function submitContractTx(
   env: Env,
   to: `0x${string}`,
   data: `0x${string}`,
   gas: bigint = 500_000n
 ): Promise<{ hash: `0x${string}`; receipt: any }> {
-  return getTxQueue().enqueue(async () => {
-    const wallet = getWalletClient(env);
-    const pub = getPublicClient(env);
+  const id = env.TX_QUEUE.idFromName("global");
+  const stub = env.TX_QUEUE.get(id);
 
-    const hash = await wallet.sendTransaction({ to, data, gas });
-    const receipt = await (pub as any).waitForTransactionReceipt({ hash });
-
-    if (receipt.status !== "success") {
-      throw new Error(`TX reverted: ${hash}`);
-    }
-
-    return { hash, receipt };
+  const res = await stub.fetch("https://do/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to,
+      data,
+      gas: gas.toString(),
+      rpcUrl: env.RPC_URL,
+      chainId: Number(env.CHAIN_ID),
+      privateKey: env.HOT_WALLET_PRIVATE_KEY,
+    }),
   });
+
+  const result = (await res.json()) as any;
+
+  if (!res.ok) {
+    throw new Error(result.error || `TX submission failed: ${res.status}`);
+  }
+
+  return { hash: result.hash, receipt: result.receipt };
 }

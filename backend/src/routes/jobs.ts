@@ -55,7 +55,7 @@ app.post("/jobs/create", async (c) => {
 
     const now = Math.floor(Date.now() / 1000);
     await env.DB.prepare(
-      `INSERT INTO jobs (id, buyer, provider, amount, description_hash, status, tx_hash, created_at)
+      `INSERT OR REPLACE INTO jobs (id, buyer, provider, amount, description_hash, status, tx_hash, created_at)
        VALUES (?1, ?2, ?3, ?4, ?5, 'funded', ?6, ?7)`
     )
       .bind(jobId, buyer.toLowerCase(), provider.toLowerCase(), amount, descriptionHash, hash, now)
@@ -133,12 +133,19 @@ app.post("/jobs/:id/dispute", async (c) => {
 });
 
 app.post("/jobs/:id/resolve", async (c) => {
+  const env = c.env;
+
+  // Only the whitelisted judge address can resolve disputes
+  const caller = c.req.header("x-agent-address")?.toLowerCase();
+  if (!env.JUDGE_ADDRESS || caller !== env.JUDGE_ADDRESS.toLowerCase()) {
+    return c.json({ error: "Forbidden: only the protocol judge can resolve disputes" }, 403);
+  }
+
   const jobId = Number(c.req.param("id"));
   const { buyerAmount, providerAmount } = await c.req.json();
   if (buyerAmount === undefined || providerAmount === undefined) {
     return c.json({ error: "Missing buyerAmount or providerAmount" }, 400);
   }
-  const env = c.env;
 
   const data = encodeFunctionData({
     abi: ESCROW_ABI,

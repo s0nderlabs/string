@@ -1,12 +1,9 @@
 import {
   createPublicClient,
-  createWalletClient,
   http,
   defineChain,
   type PublicClient,
-  type WalletClient,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import type { Env } from "../types";
 
 export const hashkeyTestnet = defineChain({
@@ -17,7 +14,6 @@ export const hashkeyTestnet = defineChain({
 });
 
 let _publicClient: PublicClient | null = null;
-let _walletClient: WalletClient | null = null;
 
 export function getPublicClient(env: Env): PublicClient {
   if (!_publicClient) {
@@ -27,18 +23,4 @@ export function getPublicClient(env: Env): PublicClient {
     }) as PublicClient;
   }
   return _publicClient;
-}
-
-export function getWalletClient(env: Env): WalletClient {
-  if (!_walletClient) {
-    const account = privateKeyToAccount(
-      env.HOT_WALLET_PRIVATE_KEY as `0x${string}`
-    );
-    _walletClient = createWalletClient({
-      account,
-      chain: hashkeyTestnet,
-      transport: http(env.RPC_URL),
-    });
-  }
-  return _walletClient;
 }

@@ -39,6 +39,8 @@ app.route("/", agents);
 app.route("/", files);
 app.route("/", disputes);
 
+export { TxQueueDO } from "./chain/TxQueueDO";
+
 export default {
   fetch: app.fetch,
   scheduled,

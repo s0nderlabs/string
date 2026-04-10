@@ -1,5 +1,6 @@
 export type Env = {
   DB: D1Database;
+  TX_QUEUE: DurableObjectNamespace;
   HOT_WALLET_PRIVATE_KEY: string;
   PINATA_JWT: string;
   CHAIN_ID: string;
@@ -9,6 +10,7 @@ export type Env = {
   REGISTRY_ADDRESS: string;
   ESCROW_ADDRESS: string;
   FEE_RECIPIENT: string;
+  JUDGE_ADDRESS: string;
   MESSAGE_PRICE: string;
   FILE_UPLOAD_PRICE: string;
   FAUCET_AMOUNT: string;

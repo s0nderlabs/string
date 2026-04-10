@@ -1,25 +1,18 @@
-import { createPublicClient, createWalletClient, http, webSocket, parseAbi, encodeFunctionData, defineChain, type PublicClient, type WalletClient } from 'viem'
-import { privateKeyToAccount } from 'viem/accounts'
-import { sepolia } from 'viem/chains'
+import { createPublicClient, http, parseAbiItem, defineChain, type PublicClient } from 'viem'
 import { state } from './state.js'
+import { saveBookmark } from './bookmark.js'
 
 let _publicClient: PublicClient | null = null
-let _wsClient: PublicClient | null = null
-let _walletClient: WalletClient | null = null
 let _chain: any = null
 
 function getChain() {
   if (!_chain) {
-    if (state.chainId === 11155111) {
-      _chain = sepolia
-    } else {
-      _chain = defineChain({
-        id: state.chainId,
-        name: `Chain ${state.chainId}`,
-        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-        rpcUrls: { default: { http: [state.rpcUrl] } },
-      })
-    }
+    _chain = defineChain({
+      id: state.chainId,
+      name: 'HashKey Testnet',
+      nativeCurrency: { name: 'HSK', symbol: 'HSK', decimals: 18 },
+      rpcUrls: { default: { http: [state.rpcUrl] } },
+    })
   }
   return _chain
 }
@@ -31,73 +24,122 @@ export function getPublicClient(): PublicClient {
   return _publicClient
 }
 
-export function getWsClient(): PublicClient {
-  if (!_wsClient) {
-    _wsClient = createPublicClient({ chain: getChain(), transport: webSocket(state.wssUrl) }) as PublicClient
-  }
-  return _wsClient
-}
+// ── Registry view calls (free, no gas) ──
 
-export function getWalletClient(): WalletClient {
-  if (!_walletClient) {
-    _walletClient = createWalletClient({
-      account: privateKeyToAccount(state.privateKey),
-      chain: getChain(),
-      transport: http(state.rpcUrl),
-    })
-  }
-  return _walletClient
-}
+const REGISTRY_NONCE_ABI = [{
+  name: 'nonces',
+  type: 'function',
+  stateMutability: 'view',
+  inputs: [{ name: 'agent', type: 'address' }],
+  outputs: [{ name: '', type: 'uint256' }],
+}] as const
 
-const RELAY_ABI = parseAbi([
-  'function relayMessage(uint256[2] _pA, uint256[2][2] _pB, uint256[2] _pC, uint256[2] _pubSignals, bytes encryptedMessage) returns (uint256)',
-  'event MessageVerified(bytes32 indexed commitment, bytes32 indexed senderAddress, bytes encryptedMessage, uint256 timestamp)',
-])
+const REGISTRY_IS_REGISTERED_ABI = [{
+  name: 'isRegistered',
+  type: 'function',
+  stateMutability: 'view',
+  inputs: [{ name: 'agent', type: 'address' }],
+  outputs: [{ name: '', type: 'bool' }],
+}] as const
 
-export async function submitMessage(calldata: string, encryptedHex: `0x${string}`): Promise<string> {
-  const [pA, pB, pC, pubSigs] = JSON.parse('[' + calldata + ']')
-  const wallet = getWalletClient()
+export async function getRegistryNonce(address: `0x${string}`): Promise<bigint> {
   const pub = getPublicClient()
-
-  const data = encodeFunctionData({
-    abi: RELAY_ABI,
-    functionName: 'relayMessage',
-    args: [pA, pB, pC, pubSigs, encryptedHex],
+  return (pub as any).readContract({
+    address: state.registryAddress,
+    abi: REGISTRY_NONCE_ABI,
+    functionName: 'nonces',
+    args: [address],
   })
-
-  const txHash = await wallet.sendTransaction({
-    to: state.relayAddress,
-    data,
-    gas: 3000000n,
-  })
-
-  const receipt = await pub.waitForTransactionReceipt({ hash: txHash })
-  if (receipt.status !== 'success') throw new Error(`Message TX reverted: ${txHash}`)
-  return txHash
 }
 
-export function watchMessages(callback: (commitment: string, senderAddress: string, encrypted: string, timestamp: bigint) => void): () => void {
-  // Use WSS if available, otherwise fall back to HTTP polling
-  if (state.wssUrl) {
-    const wsClient = getWsClient()
-    const unwatch = (wsClient as any).watchContractEvent({
-      address: state.relayAddress,
-      abi: RELAY_ABI,
-      eventName: 'MessageVerified',
-      onLogs: (logs: any[]) => {
-        for (const log of logs) {
-          const { commitment, senderAddress, encryptedMessage, timestamp } = log.args
-          callback(commitment, senderAddress, encryptedMessage, timestamp)
-        }
-      },
-    })
-    return unwatch
-  }
-
-  // HTTP polling fallback
+export async function isRegistered(address: `0x${string}`): Promise<boolean> {
   const pub = getPublicClient()
-  let lastBlock = 0n
+  return (pub as any).readContract({
+    address: state.registryAddress,
+    abi: REGISTRY_IS_REGISTERED_ABI,
+    functionName: 'isRegistered',
+    args: [address],
+  })
+}
+
+export async function getUsdcBalance(address: `0x${string}`): Promise<bigint> {
+  const pub = getPublicClient()
+  return (pub as any).readContract({
+    address: state.usdcAddress,
+    abi: [{ name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] }],
+    functionName: 'balanceOf',
+    args: [address],
+  })
+}
+
+// ── Event ABIs (v2) ──
+
+const MESSAGE_VERIFIED_EVENT = parseAbiItem(
+  'event MessageVerified(bytes32 indexed commitment, address indexed sender, bytes encryptedMessage, uint256 timestamp)'
+)
+
+const JOB_CREATED_EVENT = parseAbiItem(
+  'event JobCreated(uint256 indexed jobId, address indexed buyer, address indexed provider, uint256 amount, bytes32 descriptionHash)'
+)
+
+const JOB_MARKED_DONE_EVENT = parseAbiItem(
+  'event JobMarkedDone(uint256 indexed jobId, uint256 doneAt)'
+)
+
+const JOB_ACCEPTED_EVENT = parseAbiItem(
+  'event JobAccepted(uint256 indexed jobId)'
+)
+
+const JOB_DISPUTED_EVENT = parseAbiItem(
+  'event JobDisputed(uint256 indexed jobId)'
+)
+
+const JOB_SETTLED_EVENT = parseAbiItem(
+  'event JobSettled(uint256 indexed jobId, address indexed recipient, uint256 payout, uint256 fee)'
+)
+
+const JOB_FORCE_CLOSED_EVENT = parseAbiItem(
+  'event JobForceClosed(uint256 indexed jobId)'
+)
+
+const DISPUTE_RESOLVED_EVENT = parseAbiItem(
+  'event DisputeResolved(uint256 indexed jobId, uint256 buyerAmount, uint256 providerAmount, uint256 fee)'
+)
+
+// ── Callback types ──
+
+export interface MessageEvent {
+  commitment: string
+  sender: string
+  encryptedMessage: string
+  timestamp: bigint
+}
+
+export type JobEventType = 'created' | 'done' | 'accepted' | 'disputed' | 'settled' | 'force_closed' | 'dispute_resolved'
+
+export interface JobEvent {
+  type: JobEventType
+  jobId: bigint
+  buyer?: string
+  provider?: string
+  amount?: bigint
+  recipient?: string
+  payout?: bigint
+  buyerAmount?: bigint
+  providerAmount?: bigint
+}
+
+// ── Unified polling ──
+
+export function watchEvents(
+  onMessage: (evt: MessageEvent) => void,
+  onJob: (evt: JobEvent) => void,
+  startBlock?: bigint | null
+): () => void {
+  const pub = getPublicClient()
+  let lastBlock = startBlock || 0n
   let stopped = false
+  let tickCount = 0
 
   async function poll() {
     if (lastBlock === 0n) {
@@ -106,22 +148,53 @@ export function watchMessages(callback: (commitment: string, senderAddress: stri
 
     while (!stopped) {
       await new Promise(r => setTimeout(r, 1000))
+      tickCount++
+
+      // Heartbeat: ping backend every 20s to keep last_seen fresh (agent stays online)
+      if (tickCount % 20 === 0) {
+        const { getAgent } = await import('./api.js')
+        getAgent(state.address).catch(() => {})
+      }
+
       try {
-        const currentBlock = await (pub as any).getBlockNumber()
-        if (currentBlock > lastBlock) {
-          const logs = await (pub as any).getLogs({
-            address: state.relayAddress,
-            event: RELAY_ABI[1], // MessageVerified event
-            fromBlock: lastBlock + 1n,
-            toBlock: currentBlock,
-          })
-          for (const log of logs) {
-            const { commitment, senderAddress, encryptedMessage, timestamp } = log.args
-            callback(commitment, senderAddress, encryptedMessage, timestamp)
-          }
-          lastBlock = currentBlock
+        const currentBlock: bigint = await (pub as any).getBlockNumber()
+        if (currentBlock <= lastBlock) continue
+
+        const fromBlock = lastBlock + 1n
+        const toBlock = currentBlock
+
+        // Fetch message events + escrow events (typed parsing — viem handles topic hashing)
+        const esc = state.escrowAddress
+        const [messageLogs, createdLogs, doneLogs, acceptedLogs, disputedLogs, settledLogs, forceClosedLogs, resolvedLogs] =
+          await Promise.all([
+            (pub as any).getLogs({ address: state.relayAddress, event: MESSAGE_VERIFIED_EVENT, fromBlock, toBlock }),
+            (pub as any).getLogs({ address: esc, event: JOB_CREATED_EVENT, fromBlock, toBlock }),
+            (pub as any).getLogs({ address: esc, event: JOB_MARKED_DONE_EVENT, fromBlock, toBlock }),
+            (pub as any).getLogs({ address: esc, event: JOB_ACCEPTED_EVENT, fromBlock, toBlock }),
+            (pub as any).getLogs({ address: esc, event: JOB_DISPUTED_EVENT, fromBlock, toBlock }),
+            (pub as any).getLogs({ address: esc, event: JOB_SETTLED_EVENT, fromBlock, toBlock }),
+            (pub as any).getLogs({ address: esc, event: JOB_FORCE_CLOSED_EVENT, fromBlock, toBlock }),
+            (pub as any).getLogs({ address: esc, event: DISPUTE_RESOLVED_EVENT, fromBlock, toBlock }),
+          ])
+
+        for (const log of messageLogs) {
+          onMessage({ commitment: log.args.commitment, sender: log.args.sender, encryptedMessage: log.args.encryptedMessage, timestamp: log.args.timestamp })
         }
-      } catch {}
+        for (const log of createdLogs) {
+          onJob({ type: 'created', jobId: log.args.jobId, buyer: log.args.buyer, provider: log.args.provider, amount: log.args.amount })
+        }
+        for (const log of doneLogs) { onJob({ type: 'done', jobId: log.args.jobId }) }
+        for (const log of acceptedLogs) { onJob({ type: 'accepted', jobId: log.args.jobId }) }
+        for (const log of disputedLogs) { onJob({ type: 'disputed', jobId: log.args.jobId }) }
+        for (const log of settledLogs) { onJob({ type: 'settled', jobId: log.args.jobId, recipient: log.args.recipient, payout: log.args.payout }) }
+        for (const log of forceClosedLogs) { onJob({ type: 'force_closed', jobId: log.args.jobId }) }
+        for (const log of resolvedLogs) { onJob({ type: 'dispute_resolved', jobId: log.args.jobId, buyerAmount: log.args.buyerAmount, providerAmount: log.args.providerAmount }) }
+
+        lastBlock = currentBlock
+        saveBookmark(state.address, currentBlock)
+      } catch (err) {
+        process.stderr.write(`string: poll error: ${err}\n`)
+      }
     }
   }
 

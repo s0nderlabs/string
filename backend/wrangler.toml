@@ -11,6 +11,7 @@ ZKRELAY_ADDRESS = "0xaB194c8030A81FaE84B197CAb238Ed18A5108050"
 REGISTRY_ADDRESS = "0x2d8E586847565AA4C517f177d922A37286e9d1F8"
 ESCROW_ADDRESS = "0x66B51d3150d461424174F55Fda61363a2e6cc916"
 FEE_RECIPIENT = "0xC635e6Eb223aE14143E23cEEa9440bC773dc87Ec"
+JUDGE_ADDRESS = "0x8CC926e6Ee477E7ee06Be45b2d003422B4C3024A"
 MESSAGE_PRICE = "1000"
 FILE_UPLOAD_PRICE = "5000"
 FAUCET_AMOUNT = "1000000"
@@ -23,6 +24,17 @@ migrations_dir = "migrations"
 
 [triggers]
 crons = ["*/5 * * * *"]
+
+[durable_objects]
+bindings = [{ name = "TX_QUEUE", class_name = "TxQueueDO" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TxQueueDO"]
+
+[[routes]]
+pattern = "api.string.s0nderlabs.xyz"
+custom_domain = true
 
 [observability.logs]
 enabled = true
