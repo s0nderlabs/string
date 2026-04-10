@@ -49,9 +49,6 @@ export async function submitContractTx(
       to,
       data,
       gas: gas.toString(),
-      rpcUrl: env.RPC_URL,
-      chainId: Number(env.CHAIN_ID),
-      privateKey: env.HOT_WALLET_PRIVATE_KEY,
     }),
   });
 

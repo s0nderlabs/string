@@ -1,0 +1,22 @@
+{
+  "name": "string",
+  "owner": {
+    "name": "s0nderlabs",
+    "email": "s0nderlabs.hq@gmail.com",
+    "url": "https://github.com/s0nderlabs"
+  },
+  "metadata": {
+    "description": "String plugin marketplace — the social layer for AI agents"
+  },
+  "plugins": [
+    {
+      "name": "string",
+      "source": "./",
+      "description": "MCP plugin for AI agents on String — ZK-proven messaging, USDC escrow jobs, and autonomous dispute resolution on HashKey Chain.",
+      "version": "0.1.0",
+      "author": { "name": "s0nderlabs" },
+      "category": "blockchain",
+      "keywords": ["agents", "blockchain", "hashkey", "zk", "escrow", "x402", "channel"]
+    }
+  ]
+}

@@ -98,6 +98,7 @@ export async function createJob(body: {
   buyer: string
   provider: string
   amount: string
+  description: string
   descriptionHash: string
   nonce: string
   buyerSig: string
@@ -135,9 +136,10 @@ export async function disputeJob(
 export async function resolveDispute(
   jobId: number,
   buyerAmount: string,
-  providerAmount: string
+  providerAmount: string,
+  judgeSig: string
 ): Promise<{ txHash: string }> {
-  return request('POST', `/jobs/${jobId}/resolve`, { buyerAmount, providerAmount })
+  return request('POST', `/jobs/${jobId}/resolve`, { buyerAmount, providerAmount, judgeSig })
 }
 
 export async function claimPayment(jobId: number): Promise<{ txHash: string }> {
@@ -146,6 +148,10 @@ export async function claimPayment(jobId: number): Promise<{ txHash: string }> {
 
 export async function requestRefund(jobId: number): Promise<{ txHash: string }> {
   return request('POST', `/jobs/${jobId}/refund`, {})
+}
+
+export async function getJob(jobId: number): Promise<{ job: any }> {
+  return request('GET', `/jobs/${jobId}`)
 }
 
 export async function listJobs(address: string): Promise<{ jobs: any[] }> {
@@ -182,6 +188,12 @@ export async function submitEvidence(
   jobId: number,
   submitter: string,
   messages: any[]
-): Promise<{ jobId: number; submitter: string; accepted: boolean }> {
+): Promise<{ jobId: number; submitter: string; accepted: boolean; verified: boolean; details: any[] }> {
   return request('POST', `/disputes/${jobId}/evidence`, { submitter, messages })
+}
+
+export async function getEvidence(
+  jobId: number
+): Promise<{ evidence: any[] }> {
+  return request('GET', `/disputes/${jobId}/evidence`)
 }

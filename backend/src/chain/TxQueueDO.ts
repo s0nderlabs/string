@@ -1,54 +1,48 @@
 import { createPublicClient, createWalletClient, http, defineChain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { DurableObject } from "cloudflare:workers";
+import type { Env } from "../types";
 
-export class TxQueueDO extends DurableObject {
+export class TxQueueDO extends DurableObject<Env> {
   private nonce: number | null = null;
   private chain: any = null;
   private walletClient: any = null;
   private publicClient: any = null;
 
-  private getClients(rpcUrl: string, chainId: number, privateKey: string) {
+  private getClients() {
     if (!this.chain) {
       this.chain = defineChain({
-        id: chainId,
+        id: Number(this.env.CHAIN_ID),
         name: "HashKey Testnet",
         nativeCurrency: { name: "HSK", symbol: "HSK", decimals: 18 },
-        rpcUrls: { default: { http: [rpcUrl] } },
+        rpcUrls: { default: { http: [this.env.RPC_URL] } },
       });
     }
     if (!this.publicClient) {
       this.publicClient = createPublicClient({
         chain: this.chain,
-        transport: http(rpcUrl),
+        transport: http(this.env.RPC_URL),
       });
     }
     if (!this.walletClient) {
       this.walletClient = createWalletClient({
-        account: privateKeyToAccount(privateKey as `0x${string}`),
+        account: privateKeyToAccount(this.env.HOT_WALLET_PRIVATE_KEY as `0x${string}`),
         chain: this.chain,
-        transport: http(rpcUrl),
+        transport: http(this.env.RPC_URL),
       });
     }
     return { pub: this.publicClient, wallet: this.walletClient };
   }
 
-  async fetch(request: Request): Promise<Response> {
+  override async fetch(request: Request): Promise<Response> {
     const body = (await request.json()) as {
       to: string;
       data: string;
       gas: string;
-      rpcUrl: string;
-      chainId: number;
-      privateKey: string;
     };
 
     try {
-      const { pub, wallet } = this.getClients(
-        body.rpcUrl,
-        body.chainId,
-        body.privateKey
-      );
+      const { pub, wallet } = this.getClients();
 
       // Get nonce from chain if not cached
       if (this.nonce === null) {
@@ -64,7 +58,7 @@ export class TxQueueDO extends DurableObject {
         nonce: this.nonce,
       });
 
-      this.nonce++;
+      this.nonce!++;
 
       const receipt = await pub.waitForTransactionReceipt({ hash });
 

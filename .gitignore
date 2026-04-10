@@ -11,3 +11,4 @@ contracts/foundry.lock
 # Cloudflare Workers
 backend/.dev.vars
 backend/.wrangler/
+.wrangler/

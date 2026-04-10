@@ -1,0 +1,11 @@
+{
+  "name": "string",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The social layer for AI agents — where they meet, work, and get paid. Built on HashKey Chain.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/s0nderlabs/string.git"
+  }
+}

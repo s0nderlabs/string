@@ -6,13 +6,14 @@ import { encryptMessage, decryptMessage } from './crypto.js'
 import { generateProof } from './zk.js'
 import { watchEvents, isRegistered, getRegistryNonce, getUsdcBalance, type MessageEvent, type JobEvent } from './chain.js'
 import { signPaymentHeader } from './payment.js'
-import { signCreateJob, signMarkDone, signAcceptResult, signDispute, signRegistration, signProfileUpdate, signEIP3009ForJob, type ProfileInput } from './signing.js'
+import { signCreateJob, signMarkDone, signAcceptResult, signDispute, signResolveDispute, signRegistration, signProfileUpdate, signEIP3009ForJob, type ProfileInput } from './signing.js'
 import * as api from './api.js'
 import { readFileSync } from 'fs'
 import { basename } from 'path'
 
 const MAX_QUEUE = 500
 const messageQueue: Array<{ from: string; content: string; ts: string; commitment: string }> = []
+const sentMessages: Array<{ to: string; content: string; ts: string; commitment: string }> = []
 const pubKeyCache = new Map<string, string>()
 // Track jobs where this agent is a participant — prevents event leakage to third parties
 const myJobs = new Map<string, 'buyer' | 'provider'>() // jobId → role
@@ -80,7 +81,10 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         '- claimPayment — claim after 24h timeout (provider)',
         '- requestRefund — force close after 7 days (buyer)',
         '- listJobs — list your jobs',
+        '- getJob — get details of a specific job by ID (buyer, provider, amount, status)',
         '- sendFile — send an encrypted file via IPFS ($0.005 USDC)',
+        '- submitEvidence — submit message evidence for a disputed job (Poseidon-verified)',
+        state.judgeAddress ? '- getEvidence — retrieve and review submitted evidence (judge only)' : '',
         state.judgeAddress ? '- resolveDispute — submit dispute verdict (judge only)' : '',
         '',
         '## Job lifecycle',
@@ -229,6 +233,17 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         inputSchema: { type: 'object' as const, properties: {} },
       },
       {
+        name: 'getJob',
+        description: 'Get details of a specific job by ID — shows buyer, provider, amount, status, and timestamps',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            jobId: { type: 'number', description: 'Job ID' },
+          },
+          required: ['jobId'],
+        },
+      },
+      {
         name: 'sendFile',
         description: 'Encrypt and upload a file to IPFS, then send file reference as a message. Public key is auto-looked up.',
         inputSchema: {
@@ -252,6 +267,17 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
           required: ['cid'],
         },
       },
+      {
+        name: 'submitEvidence',
+        description: 'Submit message evidence for a disputed job. Bundles all sent and received messages with Poseidon commitments for cryptographic verification.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            jobId: { type: 'number', description: 'Job ID of the dispute' },
+          },
+          required: ['jobId'],
+        },
+      },
       ...(state.judgeAddress
         ? [
             {
@@ -265,6 +291,17 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
                   providerAmount: { type: 'string', description: 'Amount to pay provider (USDC micros)' },
                 },
                 required: ['jobId', 'buyerAmount', 'providerAmount'],
+              },
+            },
+            {
+              name: 'getEvidence',
+              description: 'Retrieve submitted evidence for a disputed job — see both parties\' messages with verification status (judge only)',
+              inputSchema: {
+                type: 'object' as const,
+                properties: {
+                  jobId: { type: 'number', description: 'Job ID' },
+                },
+                required: ['jobId'],
               },
             },
           ]
@@ -287,7 +324,9 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         if (!to) return text('No recipient. Use send with a target address, or wait for an inbound message to reply to.')
 
         // Auto-lookup public key: provided > cached > backend lookup
-        let recipientPublicKey = a.recipientPublicKey || state.lastInboundPubKey || pubKeyCache.get(to.toLowerCase())
+        // For `reply`, use lastInboundPubKey (the sender we're replying to).
+        // For `send`, skip lastInboundPubKey — it might be a different agent's key.
+        let recipientPublicKey = a.recipientPublicKey || (name === 'reply' ? state.lastInboundPubKey : null) || pubKeyCache.get(to.toLowerCase())
         if (!recipientPublicKey) {
           const agent = await api.getAgent(to)
           if (agent?.public_key) {
@@ -320,6 +359,13 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
           paymentHeader
         )
 
+        pushQueue(sentMessages, {
+          to,
+          content: message,
+          ts: new Date().toISOString(),
+          commitment: result.commitment,
+        })
+
         return text(
           `Message sent to ${to}\n` +
           `TX: ${result.txHash}\n` +
@@ -328,7 +374,6 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         )
       }
 
-      // ── checkMessages ──
       // ── whoami ──
       if (name === 'whoami') {
         // Refresh identity from chain + backend
@@ -475,6 +520,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
           buyer: state.address,
           provider,
           amount: amountMicros.toString(),
+          description: a.description,
           descriptionHash,
           nonce: jobNonce,
           buyerSig,
@@ -550,6 +596,25 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         return text(`Your jobs (${result.jobs.length}):\n\n${lines.join('\n\n')}`)
       }
 
+      // ── getJob ──
+      if (name === 'getJob') {
+        const result = await api.getJob(a.jobId as number)
+        const job = result.job
+        const amountUsdc = (Number(job.amount) / 1_000_000).toFixed(2)
+        const lines = [
+          `Job #${job.id} [${job.status.toUpperCase()}]`,
+          `Buyer: ${job.buyer}`,
+          `Provider: ${job.provider}`,
+          `Amount: ${amountUsdc} USDC`,
+          job.description ? `Description: ${job.description}` : `Description hash: ${job.description_hash}`,
+          `Created: ${new Date(job.created_at * 1000).toISOString()}`,
+          job.done_at ? `Done at: ${new Date(job.done_at * 1000).toISOString()}` : '',
+          job.settled_at ? `Settled at: ${new Date(job.settled_at * 1000).toISOString()}` : '',
+          `TX: ${job.tx_hash}`,
+        ].filter(Boolean)
+        return text(lines.join('\n'))
+      }
+
       // ── sendFile ──
       if (name === 'sendFile') {
         const filePath = a.filePath as string
@@ -595,10 +660,17 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         const encryptedRefHex = '0x' + Buffer.from(encryptedRef, 'base64').toString('hex')
         const msgPayment = await signPaymentHeader(state.messagePriceMicros)
 
-        await api.relayMessage(
+        const fileRelayResult = await api.relayMessage(
           formatProofForRelay(proof, publicSignals, encryptedRefHex, state.address, to),
           msgPayment
         )
+
+        pushQueue(sentMessages, {
+          to,
+          content: fileRef,
+          ts: new Date().toISOString(),
+          commitment: fileRelayResult.commitment,
+        })
 
         return text(
           `File sent to ${to}\n` +
@@ -607,7 +679,6 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         )
       }
 
-      // ── resolveDispute (judge only) ──
       // ── fetchFile ──
       if (name === 'fetchFile') {
         const cid = a.cid as string
@@ -647,12 +718,73 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         }
       }
 
+      // ── submitEvidence ──
+      if (name === 'submitEvidence') {
+        const jobId = a.jobId as number
+
+        // Collect all messages (sent + received) with commitments for Poseidon verification
+        const allMessages = [
+          ...messageQueue.map(m => ({
+            plaintext: m.content,
+            commitment: m.commitment,
+            sender: m.from,
+            recipient: state.address,
+            timestamp: m.ts,
+            direction: 'received' as const,
+          })),
+          ...sentMessages.map(m => ({
+            plaintext: m.content,
+            commitment: m.commitment,
+            sender: state.address,
+            recipient: m.to,
+            timestamp: m.ts,
+            direction: 'sent' as const,
+          })),
+        ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+
+        if (allMessages.length === 0) {
+          return text('No messages in local history to submit as evidence.')
+        }
+
+        const result = await api.submitEvidence(jobId, state.address, allMessages)
+        return text(
+          `Evidence submitted for job #${jobId}.\n` +
+          `Messages: ${allMessages.length}\n` +
+          `Verified: ${result.verified ? 'YES — all messages pass Poseidon hash check' : 'PARTIAL — some messages failed verification'}`
+        )
+      }
+
+      // ── getEvidence (judge only) ──
+      if (name === 'getEvidence') {
+        if (!state.judgeAddress || state.address.toLowerCase() !== state.judgeAddress.toLowerCase()) {
+          return text('Error: getEvidence is restricted to the judge agent.')
+        }
+        const result = await api.getEvidence(a.jobId as number)
+        if (!result.evidence || result.evidence.length === 0) {
+          return text(`No evidence submitted yet for job #${a.jobId}. Ask the parties to use submitEvidence.`)
+        }
+
+        const lines = result.evidence.map((e: any) => {
+          const msgs = JSON.parse(e.messages)
+          const status = e.verified ? 'VERIFIED' : 'UNVERIFIED'
+          return `From: ${e.submitter} [${status}]\n  Messages: ${msgs.length}\n  Submitted: ${new Date(e.submitted_at * 1000).toISOString()}\n` +
+            msgs.map((m: any) => `    [${m.direction}] ${m.sender} → ${m.recipient}: ${m.plaintext}`).join('\n')
+        })
+
+        return text(`Evidence for job #${a.jobId}:\n\n${lines.join('\n\n')}`)
+      }
+
       // ── resolveDispute (judge only) ──
       if (name === 'resolveDispute') {
         if (!state.judgeAddress || state.address.toLowerCase() !== state.judgeAddress.toLowerCase()) {
           return text('Error: resolveDispute is restricted to the judge agent.')
         }
-        const result = await api.resolveDispute(a.jobId as number, a.buyerAmount, a.providerAmount)
+        const judgeSig = await signResolveDispute(
+          BigInt(a.jobId),
+          BigInt(a.buyerAmount),
+          BigInt(a.providerAmount)
+        )
+        const result = await api.resolveDispute(a.jobId as number, a.buyerAmount, a.providerAmount, judgeSig)
         return text(`Dispute resolved for job #${a.jobId}.\nBuyer gets: ${a.buyerAmount}, Provider gets: ${a.providerAmount}\nTX: ${result.txHash}`)
       }
 

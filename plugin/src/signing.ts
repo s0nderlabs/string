@@ -69,6 +69,14 @@ const JOB_ACTION_TYPES = {
   Dispute: { Dispute: [{ name: 'jobId', type: 'uint256' }] },
 } as const
 
+const RESOLVE_DISPUTE_TYPES = {
+  ResolveDispute: [
+    { name: 'jobId', type: 'uint256' },
+    { name: 'buyerAmount', type: 'uint256' },
+    { name: 'providerAmount', type: 'uint256' },
+  ],
+} as const
+
 export async function signCreateJob(
   buyer: `0x${string}`,
   provider: `0x${string}`,
@@ -108,6 +116,19 @@ export async function signDispute(jobId: bigint): Promise<`0x${string}`> {
     types: JOB_ACTION_TYPES.Dispute,
     primaryType: 'Dispute',
     message: { jobId },
+  })
+}
+
+export async function signResolveDispute(
+  jobId: bigint,
+  buyerAmount: bigint,
+  providerAmount: bigint
+): Promise<`0x${string}`> {
+  return signTypedData({
+    domain: escrowDomain(),
+    types: RESOLVE_DISPUTE_TYPES,
+    primaryType: 'ResolveDispute',
+    message: { jobId, buyerAmount, providerAmount },
   })
 }
 

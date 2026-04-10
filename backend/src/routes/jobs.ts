@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { encodeFunctionData } from "viem";
+import { encodeFunctionData, verifyTypedData } from "viem";
 import type { AppContext } from "../types";
 import { submitContractTx, ESCROW_ABI } from "../chain/contracts";
 
@@ -8,7 +8,7 @@ const app = new Hono<AppContext>();
 app.post("/jobs/create", async (c) => {
   const body = await c.req.json();
   const {
-    buyer, provider, amount, descriptionHash, nonce, buyerSig,
+    buyer, provider, amount, description, descriptionHash, nonce, buyerSig,
     validAfter, validBefore, paymentNonce, v, r, s,
   } = body;
 
@@ -55,10 +55,10 @@ app.post("/jobs/create", async (c) => {
 
     const now = Math.floor(Date.now() / 1000);
     await env.DB.prepare(
-      `INSERT OR REPLACE INTO jobs (id, buyer, provider, amount, description_hash, status, tx_hash, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, 'funded', ?6, ?7)`
+      `INSERT OR REPLACE INTO jobs (id, buyer, provider, amount, description, description_hash, status, tx_hash, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'funded', ?7, ?8)`
     )
-      .bind(jobId, buyer.toLowerCase(), provider.toLowerCase(), amount, descriptionHash, hash, now)
+      .bind(jobId, buyer.toLowerCase(), provider.toLowerCase(), amount, description || '', descriptionHash, hash, now)
       .run();
 
     return c.json({ jobId, txHash: hash });
@@ -134,17 +134,40 @@ app.post("/jobs/:id/dispute", async (c) => {
 
 app.post("/jobs/:id/resolve", async (c) => {
   const env = c.env;
+  const jobId = Number(c.req.param("id"));
+  const { buyerAmount, providerAmount, judgeSig } = await c.req.json();
 
-  // Only the whitelisted judge address can resolve disputes
-  const caller = c.req.header("x-agent-address")?.toLowerCase();
-  if (!env.JUDGE_ADDRESS || caller !== env.JUDGE_ADDRESS.toLowerCase()) {
-    return c.json({ error: "Forbidden: only the protocol judge can resolve disputes" }, 403);
+  if (buyerAmount === undefined || providerAmount === undefined || !judgeSig) {
+    return c.json({ error: "Missing buyerAmount, providerAmount, or judgeSig" }, 400);
   }
 
-  const jobId = Number(c.req.param("id"));
-  const { buyerAmount, providerAmount } = await c.req.json();
-  if (buyerAmount === undefined || providerAmount === undefined) {
-    return c.json({ error: "Missing buyerAmount or providerAmount" }, 400);
+  // Verify EIP-712 signature from judge
+  const valid = await verifyTypedData({
+    address: env.JUDGE_ADDRESS as `0x${string}`,
+    domain: {
+      name: "StringEscrow",
+      version: "1",
+      chainId: Number(env.CHAIN_ID),
+      verifyingContract: env.ESCROW_ADDRESS as `0x${string}`,
+    },
+    types: {
+      ResolveDispute: [
+        { name: "jobId", type: "uint256" },
+        { name: "buyerAmount", type: "uint256" },
+        { name: "providerAmount", type: "uint256" },
+      ],
+    },
+    primaryType: "ResolveDispute",
+    message: {
+      jobId: BigInt(jobId),
+      buyerAmount: BigInt(buyerAmount),
+      providerAmount: BigInt(providerAmount),
+    },
+    signature: judgeSig as `0x${string}`,
+  });
+
+  if (!valid) {
+    return c.json({ error: "Invalid judge signature" }, 403);
   }
 
   const data = encodeFunctionData({
@@ -201,6 +224,16 @@ app.post("/jobs/:id/refund", async (c) => {
   } catch (err: any) {
     return c.json({ error: err.message }, 500);
   }
+});
+
+app.get("/jobs/:id", async (c) => {
+  const jobId = Number(c.req.param("id"));
+  const result = await c.env.DB.prepare(
+    "SELECT * FROM jobs WHERE id = ?1"
+  ).bind(jobId).first();
+
+  if (!result) return c.json({ error: "Job not found" }, 404);
+  return c.json({ job: result });
 });
 
 app.get("/jobs", async (c) => {
