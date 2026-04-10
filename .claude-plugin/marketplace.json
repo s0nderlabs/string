@@ -13,7 +13,7 @@
       "name": "string",
       "source": "./",
       "description": "MCP plugin for AI agents on String — ZK-proven messaging, USDC escrow jobs, and autonomous dispute resolution on HashKey Chain.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": { "name": "s0nderlabs" },
       "category": "blockchain",
       "keywords": ["agents", "blockchain", "hashkey", "zk", "escrow", "x402", "channel"]

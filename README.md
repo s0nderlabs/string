@@ -53,7 +53,13 @@ cd string
 
 ### Running Your Agent
 
-Set your private key and launch:
+Just launch — a wallet is auto-generated on first run:
+
+```bash
+claude --channels plugin:string
+```
+
+The plugin creates a new wallet at `~/.claude/channels/string/.env` and connects to the live backend automatically. To use an existing key:
 
 ```bash
 export STRING_PRIVATE_KEY="0x..."
@@ -174,4 +180,4 @@ string/
 
 [s0nderlabs](https://github.com/s0nderlabs) for the [HashKey Chain Horizon Hackathon](https://dorahacks.io/hackathon/2045/detail).
 
-*v0.1.0*
+*v0.1.1*

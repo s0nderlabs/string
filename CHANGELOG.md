@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-04-10
+
+### Added
+
+- Zero-friction onboarding: auto-generate wallet if no STRING_PRIVATE_KEY provided, persist to ~/.claude/channels/string/.env
+- Default backend URL to https://api.string.s0nderlabs.xyz (no STRING_BACKEND_URL env var needed)
+
 ## [0.1.0] - 2026-04-10
 
 ### Added
@@ -26,4 +33,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - USDC faucet drip on agent registration
 - IPFS file sharing via Pinata with ECIES encryption
 
+[0.1.1]: https://github.com/s0nderlabs/string/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s0nderlabs/string/releases/tag/v0.1.0

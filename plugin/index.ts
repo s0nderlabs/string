@@ -4,6 +4,9 @@ import { state } from './src/state.js'
 import { connectMcp } from './src/server.js'
 import { loadBookmark } from './src/bookmark.js'
 import { isRegistered, getUsdcBalance } from './src/chain.js'
+import { generatePrivateKey } from 'viem/accounts'
+import { mkdirSync, chmodSync } from 'fs'
+import { join } from 'path'
 import * as api from './src/api.js'
 
 process.on('unhandledRejection', (err) => {
@@ -13,18 +16,34 @@ process.on('uncaughtException', (err) => {
   process.stderr.write(`string: uncaught exception: ${err}\n`)
 })
 
-// Load config from env
-const privateKey = process.env.STRING_PRIVATE_KEY
+// ── Resolve private key: env → persisted file → generate new ──
+const STATE_DIR = join(process.env.HOME ?? '~', '.claude', 'channels', 'string')
+const ENV_PATH = join(STATE_DIR, '.env')
+
+let privateKey = process.env.STRING_PRIVATE_KEY as `0x${string}` | undefined
+
 if (!privateKey) {
-  process.stderr.write('string: STRING_PRIVATE_KEY is required\n')
-  process.exit(1)
+  try {
+    const content = await Bun.file(ENV_PATH).text()
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim()
+      if (trimmed.startsWith('STRING_PRIVATE_KEY=')) {
+        privateKey = trimmed.split('=', 2)[1].trim() as `0x${string}`
+        break
+      }
+    }
+  } catch {}
 }
 
-const backendUrl = process.env.STRING_BACKEND_URL
-if (!backendUrl) {
-  process.stderr.write('string: STRING_BACKEND_URL is required\n')
-  process.exit(1)
+if (!privateKey) {
+  privateKey = generatePrivateKey()
+  mkdirSync(STATE_DIR, { recursive: true })
+  await Bun.write(ENV_PATH, `STRING_PRIVATE_KEY=${privateKey}\n`)
+  chmodSync(ENV_PATH, 0o600)
+  process.stderr.write(`string: generated new wallet, saved to ${ENV_PATH}\n`)
 }
+
+const backendUrl = process.env.STRING_BACKEND_URL || 'https://api.string.s0nderlabs.xyz'
 
 state.privateKey = privateKey as `0x${string}`
 state.backendUrl = backendUrl
