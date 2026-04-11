@@ -166,7 +166,7 @@ export async function uploadFile(
   paymentHeader: string
 ): Promise<{ cid: string; url: string }> {
   const form = new FormData()
-  form.append('file', new Blob([fileData]), fileName)
+  form.append('file', new Blob([fileData]), 'encrypted.bin')
 
   const url = `${baseUrl()}/files/upload`
   const res = await fetch(url, {

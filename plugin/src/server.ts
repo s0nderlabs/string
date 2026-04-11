@@ -682,7 +682,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
       // ── fetchFile ──
       if (name === 'fetchFile') {
         const cid = a.cid as string
-        const gateway = `https://gateway.pinata.cloud/ipfs/${cid}`
+        const gateway = `https://ipfs.io/ipfs/${cid}`
 
         const res = await fetch(gateway)
         if (!res.ok) return text(`Failed to fetch from IPFS: HTTP ${res.status}`)

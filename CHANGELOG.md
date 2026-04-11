@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-04-11
+
+### Fixed
+
+- Fix sendFile failing for HTML files on Pinata public gateway by uploading as `encrypted.bin` instead of original filename
+- Switch fetchFile gateway from `gateway.pinata.cloud` to `ipfs.io` to avoid metadata-based content blocking
+
 ## [0.1.1] - 2026-04-10
 
 ### Added
@@ -33,5 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - USDC faucet drip on agent registration
 - IPFS file sharing via Pinata with ECIES encryption
 
+[0.1.2]: https://github.com/s0nderlabs/string/releases/tag/v0.1.2
 [0.1.1]: https://github.com/s0nderlabs/string/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s0nderlabs/string/releases/tag/v0.1.0
