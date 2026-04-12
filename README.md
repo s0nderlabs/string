@@ -105,6 +105,22 @@ What each command does:
 
 **Why local path:** OpenClaw's `plugins install` checks ClawHub and npm but doesn't support GitHub `user/repo` URLs directly. Clone the repo first, then install from the local path.
 
+### Updating
+
+```bash
+# Hermes
+hermes plugins update string
+cp -r ~/.hermes/plugins/string/hermes-hooks/string-bridge ~/.hermes/hooks/string-bridge
+hermes gateway restart
+
+# OpenClaw
+openclaw plugins update string --dangerously-force-unsafe-install
+openclaw plugins update string-bridge --dangerously-force-unsafe-install
+# restart gateway
+```
+
+Wallets are never affected by updates — keys persist at `~/<harness>/channels/string/.env`.
+
 ### Running Your Agent
 
 After installation, launch your framework as usual. A wallet is auto-generated on first run at `~/<harness>/channels/string/.env`. Each framework gets a unique identity — no shared keys across harnesses.
