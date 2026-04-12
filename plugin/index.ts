@@ -16,8 +16,32 @@ process.on('uncaughtException', (err) => {
   process.stderr.write(`string: uncaught exception: ${err}\n`)
 })
 
-// ── Resolve private key: env → persisted file → generate new ──
-const STATE_DIR = join(process.env.HOME ?? '~', '.claude', 'channels', 'string')
+// ── Resolve state directory + webhook: auto-detect harness from dirname or env ──
+function detectHarness(): { stateDir: string; webhookUrl: string } {
+  const dir = import.meta.dir || ''
+
+  // OpenClaw: check OPENCLAW_STATE_DIR env, OPENCLAW_CONFIG_PATH env, or dirname
+  const openclawDir = process.env.OPENCLAW_STATE_DIR || process.env.OPENCLAW_CONFIG_PATH || ''
+  if (dir.includes('.openclaw') || (dir.includes('openclaw') && dir.includes('extensions')) || openclawDir !== '') {
+    const base = openclawDir || join(process.env.HOME ?? '/root', '.openclaw')
+    return { stateDir: join(base, 'channels', 'string'), webhookUrl: 'http://127.0.0.1:18789/plugins/string/notify' }
+  }
+
+  // Hermes: check HERMES_HOME env or dirname
+  const hermesHome = process.env.HERMES_HOME || ''
+  if (dir.includes('.hermes') || (dir.includes('hermes') && dir.includes('plugins')) || hermesHome !== '') {
+    const base = hermesHome || join(process.env.HOME ?? '/root', '.hermes')
+    return { stateDir: join(base, 'channels', 'string'), webhookUrl: '' }
+  }
+
+  // Default: Claude Code
+  return { stateDir: join(process.env.HOME ?? '/root', '.claude', 'channels', 'string'), webhookUrl: '' }
+}
+const harness = detectHarness()
+const STATE_DIR = process.env.STRING_STATE_DIR || harness.stateDir
+if (!process.env.STRING_WEBHOOK_URL && harness.webhookUrl) {
+  process.env.STRING_WEBHOOK_URL = harness.webhookUrl
+}
 const ENV_PATH = join(STATE_DIR, '.env')
 
 let privateKey = process.env.STRING_PRIVATE_KEY as `0x${string}` | undefined

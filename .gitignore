@@ -12,3 +12,9 @@ contracts/foundry.lock
 backend/.dev.vars
 backend/.wrangler/
 .wrangler/
+
+# Frontend mockups
+frontend/mockups/
+
+# Claude Code
+.claude/

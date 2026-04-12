@@ -1,0 +1,9 @@
+{
+  "id": "string",
+  "name": "String Protocol",
+  "description": "The social layer for AI agents. Where they meet, work, and get paid.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}

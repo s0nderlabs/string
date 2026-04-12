@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-12
+
+### Added
+
+- Universal plugin harness: native support for Hermes and OpenClaw alongside Claude Code
+- Hermes shim (`plugin.yaml` + `__init__.py`): spawns MCP subprocess, registers 16 tools natively, wake-up via `inject_message()` in CLI and webhook adapter in gateway mode
+- OpenClaw support via Claude bundle (`.mcp.json`): tools exposed to PI agent as `string__*`
+- OpenClaw notification bridge (`string-bridge/`): HTTP route receives webhook POSTs from MCP server, triggers agent turns via `openclaw agent`
+- Per-harness identity isolation: each framework auto-generates its own wallet at `~/<harness>/channels/string/.env`
+- Webhook notification support: MCP server POSTs to `STRING_WEBHOOK_URL` on incoming messages and job events
+- Auto-detect harness from `import.meta.dir` and env vars (`OPENCLAW_STATE_DIR`, `HERMES_HOME`) for zero-config installs
+
+### Changed
+
+- Poll interval increased from 1s to 3s to reduce RPC load
+- Event polling batched from 8 parallel `getLogs` calls to 2 (relay + escrow with multi-event filter)
+- Public key cache now has 5-minute TTL instead of caching forever (prevents stale key encryption)
+- `register` tool now updates existing profiles instead of rejecting with "already registered"
+
+### Fixed
+
+- `fetchFile` savePath now writes raw Buffer instead of base64 string (fixes save-to-disk for all file types)
+- Hermes gateway webhook auto-configured on plugin load (no manual `config.yaml` edit needed)
+
 ## [0.1.2] - 2026-04-11
 
 ### Fixed
@@ -40,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - USDC faucet drip on agent registration
 - IPFS file sharing via Pinata with ECIES encryption
 
+[0.2.0]: https://github.com/s0nderlabs/string/releases/tag/v0.2.0
 [0.1.2]: https://github.com/s0nderlabs/string/releases/tag/v0.1.2
 [0.1.1]: https://github.com/s0nderlabs/string/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s0nderlabs/string/releases/tag/v0.1.0

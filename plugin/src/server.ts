@@ -11,10 +11,27 @@ import * as api from './api.js'
 import { readFileSync } from 'fs'
 import { basename } from 'path'
 
+const WEBHOOK_URL = process.env.STRING_WEBHOOK_URL || ''
+
+function postWebhook(content: string, meta: { agent_id: string; user: string; ts: string }) {
+  if (!WEBHOOK_URL) return
+  fetch(WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, meta }),
+  }).catch(() => {})
+}
+
 const MAX_QUEUE = 500
 const messageQueue: Array<{ from: string; content: string; ts: string; commitment: string }> = []
 const sentMessages: Array<{ to: string; content: string; ts: string; commitment: string }> = []
-const pubKeyCache = new Map<string, string>()
+const PUBKEY_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const pubKeyCache = new Map<string, { key: string; ts: number }>()
+
+function getCachedPubKey(addr: string): string | undefined {
+  const c = pubKeyCache.get(addr.toLowerCase())
+  return c && Date.now() - c.ts < PUBKEY_TTL_MS ? c.key : undefined
+}
 // Track jobs where this agent is a participant — prevents event leakage to third parties
 const myJobs = new Map<string, 'buyer' | 'provider'>() // jobId → role
 
@@ -326,12 +343,12 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         // Auto-lookup public key: provided > cached > backend lookup
         // For `reply`, use lastInboundPubKey (the sender we're replying to).
         // For `send`, skip lastInboundPubKey — it might be a different agent's key.
-        let recipientPublicKey = a.recipientPublicKey || (name === 'reply' ? state.lastInboundPubKey : null) || pubKeyCache.get(to.toLowerCase())
+        let recipientPublicKey = a.recipientPublicKey || (name === 'reply' ? state.lastInboundPubKey : null) || getCachedPubKey(to)
         if (!recipientPublicKey) {
           const agent = await api.getAgent(to)
           if (agent?.public_key) {
             recipientPublicKey = agent.public_key
-            pubKeyCache.set(to.toLowerCase(), agent.public_key)
+            pubKeyCache.set(to.toLowerCase(), { key: agent.public_key, ts: Date.now() })
           }
         }
         if (!recipientPublicKey) return text(`Agent ${to} not found or has no public key registered.`)
@@ -412,19 +429,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         const alreadyRegistered = await isRegistered(state.address as `0x${string}`)
 
         if (alreadyRegistered) {
-          // Already on-chain — check if D1 is in sync, re-sync if needed
-          const existing = await api.getAgent(state.address)
-          if (existing) {
-            return text(
-              `Already registered on String.\n` +
-              `Name: ${(existing as any).name}\n` +
-              `Address: ${state.address}\n` +
-              `Model: ${(existing as any).model}\n` +
-              `Skills: ${((existing as any).skills || []).join(', ') || 'none'}\n\n` +
-              `To change your profile, ask me to update it.`
-            )
-          }
-          // On-chain but not in D1 — update profile to re-sync
+          // Already on-chain — update profile with new values
           const nonce = await getRegistryNonce(state.address as `0x${string}`)
           const input: ProfileInput = {
             name: a.name, model: a.model, harness: a.harness, os: a.os,
@@ -438,9 +443,14 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
             nonce: nonce.toString(),
             signature,
           })
+          state.agentName = input.name
+          state.skills = input.skills
+          state.description = input.description
           return text(
-            `Already registered on-chain — updated profile and re-synced.\n` +
+            `Profile updated on String.\n` +
+            `Name: ${input.name}\n` +
             `Address: ${state.address}\n` +
+            `Model: ${input.model} | Harness: ${input.harness}\n` +
             `TX: ${result.txHash}`
           )
         }
@@ -621,12 +631,12 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         const to = a.to as string
 
         // Auto-lookup public key
-        let recipientPublicKey = a.recipientPublicKey || pubKeyCache.get(to.toLowerCase())
+        let recipientPublicKey = a.recipientPublicKey || getCachedPubKey(to)
         if (!recipientPublicKey) {
           const agent = await api.getAgent(to)
           if (agent?.public_key) {
             recipientPublicKey = agent.public_key
-            pubKeyCache.set(to.toLowerCase(), agent.public_key)
+            pubKeyCache.set(to.toLowerCase(), { key: agent.public_key, ts: Date.now() })
           }
         }
         if (!recipientPublicKey) return text(`Agent ${to} not found or has no public key registered.`)
@@ -692,29 +702,28 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         try {
           const decrypted = decryptMessage(state.privateKey, encryptedBase64)
 
-          // Auto-decode base64 if the content was base64-wrapped during sendFile
-          let content: string
-          try {
-            const decoded = Buffer.from(decrypted, 'base64').toString('utf-8')
-            // Check if decoding produced valid text (not garbled binary)
-            const isValidText = decoded.length > 0 && !decoded.includes('\ufffd')
-            content = isValidText ? decoded : decrypted
-          } catch {
-            content = decrypted
-          }
+          // sendFile wraps content as base64 before encrypting — decode it back
+          const fileBytes = Buffer.from(decrypted, 'base64')
 
           if (a.savePath) {
             const { writeFileSync } = await import('fs')
-            writeFileSync(a.savePath, content)
-            return text(`File downloaded and decrypted.\nSaved to: ${a.savePath}\nSize: ${content.length} bytes`)
+            writeFileSync(a.savePath, fileBytes)
+            return text(`File downloaded and decrypted.\nSaved to: ${a.savePath}\nSize: ${fileBytes.length} bytes`)
           }
 
-          if (content.length > 2000) {
-            return text(`File downloaded and decrypted (${content.length} bytes). Content is too large to display inline — use savePath to save it to disk.`)
+          // Try to display as text if it's small enough
+          const asText = fileBytes.toString('utf-8')
+          const isValidText = asText.length > 0 && !asText.includes('\ufffd')
+
+          if (!isValidText) {
+            return text(`File downloaded and decrypted (${fileBytes.length} bytes, binary). Use savePath to save it to disk.`)
           }
-          return text(`File downloaded and decrypted:\n\n${content}`)
-        } catch {
-          return text(`File downloaded but decryption failed — this file may not have been encrypted for you.`)
+          if (asText.length > 2000) {
+            return text(`File downloaded and decrypted (${fileBytes.length} bytes). Content is too large to display inline — use savePath to save it to disk.`)
+          }
+          return text(`File downloaded and decrypted:\n\n${asText}`)
+        } catch (err) {
+          return text(`File downloaded but decryption failed — this file may not have been encrypted for you.\nError: ${err}`)
         }
       }
 
@@ -810,6 +819,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
             method: 'notifications/claude/channel',
             params: { content: plaintext, meta: { agent_id: m.sender, user: m.sender.slice(0, 10) + '...', ts } },
           }).catch(() => {})
+          postWebhook(plaintext, { agent_id: m.sender, user: m.sender.slice(0, 10) + '...', ts })
         } catch { /* can't decrypt — not for us */ }
       }
       if (msgs.length > 0) process.stderr.write(`string: flushed ${msgs.length} missed message(s)\n`)
@@ -831,29 +841,24 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
 
         pushQueue(messageQueue, { from: evt.sender, content: plaintext, ts, commitment: evt.commitment })
 
+        const notifyMeta = { agent_id: evt.sender, user: evt.sender.slice(0, 10) + '...', ts }
         mcp.notification({
           method: 'notifications/claude/channel',
-          params: {
-            content: plaintext,
-            meta: {
-              agent_id: evt.sender,
-              user: evt.sender.slice(0, 10) + '...',
-              ts,
-            },
-          },
+          params: { content: plaintext, meta: notifyMeta },
         }).catch(() => {})
+        postWebhook(plaintext, notifyMeta)
 
         state.lastInboundFrom = evt.sender
 
         // Cache sender's public key for seamless reply
         const cached = pubKeyCache.get(evt.sender.toLowerCase())
-        if (cached) {
-          state.lastInboundPubKey = cached
+        if (cached && Date.now() - cached.ts < PUBKEY_TTL_MS) {
+          state.lastInboundPubKey = cached.key
         } else {
           api.getAgent(evt.sender).then((agent: any) => {
             if (agent?.public_key) {
               state.lastInboundPubKey = agent.public_key
-              pubKeyCache.set(evt.sender.toLowerCase(), agent.public_key)
+              pubKeyCache.set(evt.sender.toLowerCase(), { key: agent.public_key, ts: Date.now() })
             }
           }).catch(() => {})
         }
@@ -876,6 +881,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
           method: 'notifications/claude/channel',
           params: { content: `[Dispute] ${summary}`, meta: { agent_id: 'string-protocol', user: 'String', ts } },
         }).catch(() => {})
+        postWebhook(`[Dispute] ${summary}`, { agent_id: 'string-protocol', user: 'String', ts })
         return
       }
 
@@ -939,6 +945,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         method: 'notifications/claude/channel',
         params: { content: `[Job Event] ${summary}`, meta: { agent_id: 'string-protocol', user: 'String', ts } },
       }).catch(() => {})
+      postWebhook(`[Job Event] ${summary}`, { agent_id: 'string-protocol', user: 'String', ts })
     },
     startBlock
   )

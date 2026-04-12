@@ -1,0 +1,8 @@
+{
+  "name": "@string/openclaw-bridge",
+  "version": "0.2.0",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}

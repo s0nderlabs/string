@@ -147,7 +147,7 @@ export function watchEvents(
     }
 
     while (!stopped) {
-      await new Promise(r => setTimeout(r, 1000))
+      await new Promise(r => setTimeout(r, 3000))
       tickCount++
 
       // Heartbeat: ping backend every 20s to keep last_seen fresh (agent stays online)
@@ -163,32 +163,30 @@ export function watchEvents(
         const fromBlock = lastBlock + 1n
         const toBlock = currentBlock
 
-        // Fetch message events + escrow events (typed parsing — viem handles topic hashing)
+        // Fetch message events + escrow events (2 RPC calls instead of 8)
         const esc = state.escrowAddress
-        const [messageLogs, createdLogs, doneLogs, acceptedLogs, disputedLogs, settledLogs, forceClosedLogs, resolvedLogs] =
-          await Promise.all([
-            (pub as any).getLogs({ address: state.relayAddress, event: MESSAGE_VERIFIED_EVENT, fromBlock, toBlock }),
-            (pub as any).getLogs({ address: esc, event: JOB_CREATED_EVENT, fromBlock, toBlock }),
-            (pub as any).getLogs({ address: esc, event: JOB_MARKED_DONE_EVENT, fromBlock, toBlock }),
-            (pub as any).getLogs({ address: esc, event: JOB_ACCEPTED_EVENT, fromBlock, toBlock }),
-            (pub as any).getLogs({ address: esc, event: JOB_DISPUTED_EVENT, fromBlock, toBlock }),
-            (pub as any).getLogs({ address: esc, event: JOB_SETTLED_EVENT, fromBlock, toBlock }),
-            (pub as any).getLogs({ address: esc, event: JOB_FORCE_CLOSED_EVENT, fromBlock, toBlock }),
-            (pub as any).getLogs({ address: esc, event: DISPUTE_RESOLVED_EVENT, fromBlock, toBlock }),
-          ])
+        const [messageLogs, escrowLogs] = await Promise.all([
+          (pub as any).getLogs({ address: state.relayAddress, event: MESSAGE_VERIFIED_EVENT, fromBlock, toBlock }),
+          (pub as any).getLogs({
+            address: esc,
+            events: [JOB_CREATED_EVENT, JOB_MARKED_DONE_EVENT, JOB_ACCEPTED_EVENT, JOB_DISPUTED_EVENT, JOB_SETTLED_EVENT, JOB_FORCE_CLOSED_EVENT, DISPUTE_RESOLVED_EVENT],
+            fromBlock, toBlock,
+          }),
+        ])
 
         for (const log of messageLogs) {
           onMessage({ commitment: log.args.commitment, sender: log.args.sender, encryptedMessage: log.args.encryptedMessage, timestamp: log.args.timestamp })
         }
-        for (const log of createdLogs) {
-          onJob({ type: 'created', jobId: log.args.jobId, buyer: log.args.buyer, provider: log.args.provider, amount: log.args.amount })
+        for (const log of escrowLogs) {
+          const name = log.eventName
+          if (name === 'JobCreated') onJob({ type: 'created', jobId: log.args.jobId, buyer: log.args.buyer, provider: log.args.provider, amount: log.args.amount })
+          else if (name === 'JobMarkedDone') onJob({ type: 'done', jobId: log.args.jobId })
+          else if (name === 'JobAccepted') onJob({ type: 'accepted', jobId: log.args.jobId })
+          else if (name === 'JobDisputed') onJob({ type: 'disputed', jobId: log.args.jobId })
+          else if (name === 'JobSettled') onJob({ type: 'settled', jobId: log.args.jobId, recipient: log.args.recipient, payout: log.args.payout })
+          else if (name === 'JobForceClosed') onJob({ type: 'force_closed', jobId: log.args.jobId })
+          else if (name === 'DisputeResolved') onJob({ type: 'dispute_resolved', jobId: log.args.jobId, buyerAmount: log.args.buyerAmount, providerAmount: log.args.providerAmount })
         }
-        for (const log of doneLogs) { onJob({ type: 'done', jobId: log.args.jobId }) }
-        for (const log of acceptedLogs) { onJob({ type: 'accepted', jobId: log.args.jobId }) }
-        for (const log of disputedLogs) { onJob({ type: 'disputed', jobId: log.args.jobId }) }
-        for (const log of settledLogs) { onJob({ type: 'settled', jobId: log.args.jobId, recipient: log.args.recipient, payout: log.args.payout }) }
-        for (const log of forceClosedLogs) { onJob({ type: 'force_closed', jobId: log.args.jobId }) }
-        for (const log of resolvedLogs) { onJob({ type: 'dispute_resolved', jobId: log.args.jobId, buyerAmount: log.args.buyerAmount, providerAmount: log.args.providerAmount }) }
 
         lastBlock = currentBlock
         saveBookmark(state.address, currentBlock)

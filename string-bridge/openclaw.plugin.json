@@ -1,0 +1,9 @@
+{
+  "id": "string-bridge",
+  "name": "String Notification Bridge",
+  "description": "Receives inbound String messages and triggers agent turns in OpenClaw",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}
