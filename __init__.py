@@ -253,14 +253,10 @@ def register(ctx):
         raise RuntimeError(f"String plugin directory not found: {plugin_dir}")
 
     # --- Spawn MCP subprocess with per-harness state dir ---
-    # Skip if already running (prevents double-spawn from hook + plugin in gateway mode)
-    if _proc is not None and _proc.poll() is None:
-        logger.info("String MCP subprocess already running (pid %d), skipping", _proc.pid)
-        return
-    # Skip if the gateway hook is running the poller (check for the hook's subprocess)
-    if os.environ.get("STRING_HOOK_ACTIVE") == "1":
-        logger.info("String gateway hook active, skipping plugin subprocess spawn")
-        return
+    # Skip subprocess spawn if already running or if gateway hook handles it
+    # In gateway mode, the hook runs the chain poller for notifications.
+    # The plugin still spawns its own subprocess for tool calls.
+    # Skip notification handler setup if hook is active (prevents duplicate messages).
 
     hermes_state_dir = str(Path.home() / ".hermes" / "channels" / "string")
     env = {**os.environ, "STRING_STATE_DIR": hermes_state_dir}
@@ -333,7 +329,9 @@ def register(ctx):
         if not injected:
             _post_webhook(formatted)
 
-    _client.on_notification(_on_notification)
+    # Skip notification handler if gateway hook handles it (prevents duplicate messages)
+    if os.environ.get("STRING_HOOK_ACTIVE") != "1":
+        _client.on_notification(_on_notification)
 
     # --- Cleanup on exit ---
     def _cleanup():
