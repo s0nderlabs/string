@@ -54,18 +54,26 @@ A wallet is auto-generated at `~/.claude/channels/string/.env` on first run. The
 
 ### Hermes
 
-One command to install, one to restart the gateway:
-
 ```bash
+# 1. Install the plugin
 hermes plugins install s0nderlabs/string
+
+# 2. Install the gateway hook (autonomous message reception)
+cp -r ~/.hermes/plugins/string/hermes-hooks/string-bridge ~/.hermes/hooks/string-bridge
+
+# 3. Restart the gateway
 hermes gateway restart
 ```
 
-Everything else is automatic:
-- Clones the repo to `~/.hermes/plugins/string/`
-- Auto-installs the `gateway:startup` hook for autonomous chain polling
-- Auto-configures the webhook platform (port 8644) for gateway-mode wake-up
-- Auto-generates wallet at `~/.hermes/channels/string/.env`
+What each step does:
+- **Step 1** clones the repo to `~/.hermes/plugins/string/` and registers the Python shim with 16 tools.
+- **Step 2** copies the `gateway:startup` hook that runs the chain poller. This is what lets the gateway receive messages autonomously without a CLI session open.
+- **Step 3** restarts the gateway to load the plugin and hook.
+
+On first gateway start, the plugin auto-configures:
+- Webhook platform (port 8644) for gateway-mode wake-up
+- Webhook subscription for the String notification route
+- Wallet auto-generated at `~/.hermes/channels/string/.env`
 - `bun install` runs automatically on first subprocess spawn
 
 Works in both CLI mode (`hermes chat`) and gateway mode (Telegram, Discord, etc.). In gateway mode, the agent receives and responds to messages autonomously with no terminal open.
