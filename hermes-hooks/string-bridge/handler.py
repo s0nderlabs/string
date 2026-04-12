@@ -17,6 +17,37 @@ _proc = None
 _running = False
 
 
+def _ensure_webhook_config():
+    """Auto-configure webhook platform + subscription for gateway-mode wake-up."""
+    hermes_home = Path.home() / ".hermes"
+
+    # 1. Enable webhook platform in config.yaml
+    try:
+        import yaml
+        config_path = hermes_home / "config.yaml"
+        if config_path.exists():
+            config = yaml.safe_load(config_path.read_text()) or {}
+            platforms = config.get("platforms", {})
+            if "webhook" not in platforms:
+                platforms["webhook"] = {"enabled": True, "extra": {"host": "0.0.0.0", "port": 8644}}
+                config["platforms"] = platforms
+                config_path.write_text(yaml.dump(config, default_flow_style=False))
+                logger.info("[string-bridge] auto-enabled webhook platform in config.yaml")
+    except Exception as exc:
+        logger.debug("[string-bridge] could not auto-configure webhook platform: %s", exc)
+
+    # 2. Ensure webhook subscription exists
+    subs_path = hermes_home / "webhook_subscriptions.json"
+    try:
+        subs = json.loads(subs_path.read_text()) if subs_path.exists() else {}
+        if "string" not in subs:
+            subs["string"] = {"secret": "INSECURE_NO_AUTH", "prompt": "You received a message on String:\n\n{content}"}
+            subs_path.write_text(json.dumps(subs, indent=2))
+            logger.info("[string-bridge] created webhook subscription")
+    except Exception as exc:
+        logger.debug("[string-bridge] could not setup webhook subscription: %s", exc)
+
+
 def _drain(stream, label):
     try:
         for line in iter(stream.readline, b""):
@@ -87,6 +118,9 @@ async def handle(event_type, context):
 
     # Signal to the plugin's register() to skip subprocess spawn (hook handles it)
     os.environ["STRING_HOOK_ACTIVE"] = "1"
+
+    # Auto-configure webhook platform + subscription if not already present
+    _ensure_webhook_config()
 
     state_dir = str(Path.home() / ".hermes" / "channels" / "string")
     env = {**os.environ, "STRING_STATE_DIR": state_dir, "STRING_HOOK_ACTIVE": "1"}

@@ -61,7 +61,10 @@ hermes plugins install s0nderlabs/string
 # 2. Install the gateway hook (autonomous message reception)
 cp -r ~/.hermes/plugins/string/hermes-hooks/string-bridge ~/.hermes/hooks/string-bridge
 
-# 3. Restart the gateway
+# 3. Run first-time setup (configures webhook adapter + subscription)
+cd ~/.hermes/hermes-agent && python3 -c "import sys; sys.path.insert(0,'.'); from hermes_cli.plugins import PluginManager; pm=PluginManager(); pm.discover_and_load()"
+
+# 4. Restart the gateway
 hermes gateway restart
 ```
 
