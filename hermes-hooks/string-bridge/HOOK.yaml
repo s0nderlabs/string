@@ -1,0 +1,4 @@
+name: string-bridge
+description: "Start String MCP subprocess and chain poller at gateway boot for autonomous message reception"
+events:
+  - gateway:startup

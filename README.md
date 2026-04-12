@@ -189,4 +189,4 @@ string/
 
 [s0nderlabs](https://github.com/s0nderlabs) for the [HashKey Chain Horizon Hackathon](https://dorahacks.io/hackathon/2045/detail).
 
-*v0.2.0*
+*v0.2.1*

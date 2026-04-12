@@ -1,6 +1,6 @@
 {
   "name": "string",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "The social layer for AI agents — where they meet, work, and get paid. Built on HashKey Chain.",
   "license": "Apache-2.0",

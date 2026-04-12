@@ -1,18 +1,18 @@
 /**
  * String notification bridge for OpenClaw.
  *
- * Receives webhook POSTs from the String MCP server when messages arrive,
- * and triggers agent turns via `openclaw agent --message`.
+ * 1. Spawns the String MCP subprocess at gateway startup for chain polling
+ * 2. Registers an HTTP route that receives webhook POSTs from the poller
+ * 3. Triggers agent turns via `openclaw agent --message`
  */
 
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { execFile, execFileSync } from "child_process";
+import { spawn, execFile, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
-import { resolve } from "path";
+import { resolve, join } from "path";
 
 let registered = false;
 
-// Resolve openclaw binary — check common paths, fall back to PATH
 function findOpenclaw(): string {
   const candidates = [
     resolve(process.env.HOME ?? "/root", ".local/bin/openclaw"),
@@ -22,11 +22,61 @@ function findOpenclaw(): string {
   for (const p of candidates) {
     if (existsSync(p)) return p;
   }
-  return "openclaw"; // rely on PATH
+  return "openclaw";
 }
 
 let openclawBin: string | null = null;
 let turnInProgress = false;
+let pollerProc: ChildProcess | null = null;
+
+function startChainPoller() {
+  // Find the String plugin directory (installed as sibling bundle)
+  const pluginDir = resolve(
+    process.env.HOME ?? "/root",
+    ".openclaw/extensions/string/plugin"
+  );
+  if (!existsSync(pluginDir)) {
+    console.error(`[string-bridge] plugin directory not found: ${pluginDir}`);
+    return;
+  }
+
+  const stateDir = join(process.env.HOME ?? "/root", ".openclaw/channels/string");
+
+  pollerProc = spawn(
+    "bun",
+    ["run", "--cwd", pluginDir, "--shell=bun", "--silent", "start"],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        STRING_STATE_DIR: stateDir,
+        STRING_WEBHOOK_URL: "http://127.0.0.1:18789/plugins/string/notify",
+      },
+    }
+  );
+
+  pollerProc.stderr?.on("data", (c: Buffer) => {
+    const l = c.toString("utf-8").trim();
+    if (l) console.error(`[string] ${l}`);
+  });
+
+  pollerProc.on("exit", (code) => {
+    console.error(`[string-bridge] poller exited with code ${code}`);
+    pollerProc = null;
+  });
+
+  // MCP initialize handshake
+  const init = JSON.stringify({
+    jsonrpc: "2.0", id: 1, method: "initialize",
+    params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "openclaw-string-bridge", version: "0.1.0" } },
+  }) + "\n";
+  pollerProc.stdin!.write(init);
+
+  const notif = JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n";
+  setTimeout(() => pollerProc?.stdin?.write(notif), 1000);
+
+  console.error(`[string-bridge] chain poller started from ${pluginDir}`);
+}
 
 export default definePluginEntry({
   id: "string-bridge",
@@ -38,6 +88,9 @@ export default definePluginEntry({
     registered = true;
 
     if (!openclawBin) openclawBin = findOpenclaw();
+
+    // Start the chain poller subprocess
+    startChainPoller();
 
     api.registerHttpRoute({
       path: "/plugins/string/notify",
@@ -60,9 +113,8 @@ export default definePluginEntry({
 
         console.error(`[string-bridge] incoming: ${content.slice(0, 80)}...`);
 
-        // Trigger agent turn — execFile avoids shell injection, skip if turn already in progress
         if (turnInProgress) {
-          console.error(`[string-bridge] turn in progress, queuing notification`);
+          console.error(`[string-bridge] turn in progress, skipping`);
         } else {
           turnInProgress = true;
           execFile(
@@ -83,6 +135,6 @@ export default definePluginEntry({
       },
     });
 
-    console.error(`[string-bridge] notification route registered at /plugins/string/notify (bin: ${openclawBin})`);
+    console.error(`[string-bridge] ready (bin: ${openclawBin})`);
   },
 });

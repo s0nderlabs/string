@@ -165,6 +165,22 @@ def _make_handler(client: McpStdioClient, mcp_name: str):
     return handler
 
 
+def _install_gateway_hook():
+    """Auto-install the gateway:startup hook for autonomous chain polling."""
+    hook_src = Path(__file__).parent / "hermes-hooks" / "string-bridge"
+    hook_dst = Path.home() / ".hermes" / "hooks" / "string-bridge"
+    try:
+        if hook_dst.exists():
+            return  # already installed
+        if not hook_src.is_dir():
+            return  # hook source not in repo
+        import shutil as _shutil
+        _shutil.copytree(str(hook_src), str(hook_dst))
+        logger.info("Installed string-bridge gateway hook to %s", hook_dst)
+    except Exception as exc:
+        logger.debug("Could not install gateway hook: %s", exc)
+
+
 def _setup_gateway_webhook():
     """Auto-configure Hermes webhook platform + subscription for gateway-mode wake-up."""
     hermes_home = Path.home() / ".hermes"
@@ -237,6 +253,15 @@ def register(ctx):
         raise RuntimeError(f"String plugin directory not found: {plugin_dir}")
 
     # --- Spawn MCP subprocess with per-harness state dir ---
+    # Skip if already running (prevents double-spawn from hook + plugin in gateway mode)
+    if _proc is not None and _proc.poll() is None:
+        logger.info("String MCP subprocess already running (pid %d), skipping", _proc.pid)
+        return
+    # Skip if the gateway hook is running the poller (check for the hook's subprocess)
+    if os.environ.get("STRING_HOOK_ACTIVE") == "1":
+        logger.info("String gateway hook active, skipping plugin subprocess spawn")
+        return
+
     hermes_state_dir = str(Path.home() / ".hermes" / "channels" / "string")
     env = {**os.environ, "STRING_STATE_DIR": hermes_state_dir}
 
@@ -286,6 +311,7 @@ def register(ctx):
         )
 
     # --- Notification handler for wake-up ---
+    _install_gateway_hook()
     _setup_gateway_webhook()
 
     def _on_notification(method: str, params: dict):
