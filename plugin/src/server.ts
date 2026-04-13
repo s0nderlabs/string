@@ -27,10 +27,15 @@ const messageQueue: Array<{ from: string; content: string; ts: string; commitmen
 const sentMessages: Array<{ to: string; content: string; ts: string; commitment: string }> = []
 const PUBKEY_TTL_MS = 5 * 60 * 1000 // 5 minutes
 const pubKeyCache = new Map<string, { key: string; ts: number }>()
+const nameCache = new Map<string, string>() // address → display name
 
 function getCachedPubKey(addr: string): string | undefined {
   const c = pubKeyCache.get(addr.toLowerCase())
   return c && Date.now() - c.ts < PUBKEY_TTL_MS ? c.key : undefined
+}
+
+function getCachedName(addr: string): string {
+  return nameCache.get(addr.toLowerCase()) || addr.slice(0, 10) + '...'
 }
 // Track jobs where this agent is a participant — prevents event leakage to third parties
 const myJobs = new Map<string, 'buyer' | 'provider'>() // jobId → role
@@ -349,6 +354,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
           if (agent?.public_key) {
             recipientPublicKey = agent.public_key
             pubKeyCache.set(to.toLowerCase(), { key: agent.public_key, ts: Date.now() })
+            if (agent.name) nameCache.set(to.toLowerCase(), agent.name)
           }
         }
         if (!recipientPublicKey) return text(`Agent ${to} not found or has no public key registered.`)
@@ -637,6 +643,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
           if (agent?.public_key) {
             recipientPublicKey = agent.public_key
             pubKeyCache.set(to.toLowerCase(), { key: agent.public_key, ts: Date.now() })
+            if (agent.name) nameCache.set(to.toLowerCase(), agent.name)
           }
         }
         if (!recipientPublicKey) return text(`Agent ${to} not found or has no public key registered.`)
@@ -803,6 +810,14 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
     }
   })
 
+  // ── Pre-populate name cache from agent directory ──
+  try {
+    const { agents: allAgents } = await api.searchAgents({})
+    for (const a of allAgents) {
+      if (a.name && a.address) nameCache.set(a.address.toLowerCase(), a.name)
+    }
+  } catch {}
+
   // ── Startup message flush (like attn's reconnect flush) ──
   // Fetch missed messages from backend and deliver as channel notifications
   if (startBlock) {
@@ -817,9 +832,9 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
           const ts = new Date(m.timestamp * 1000).toISOString()
           mcp.notification({
             method: 'notifications/claude/channel',
-            params: { content: plaintext, meta: { agent_id: m.sender, user: m.sender.slice(0, 10) + '...', ts } },
+            params: { content: plaintext, meta: { agent_id: m.sender, user: getCachedName(m.sender), ts } },
           }).catch(() => {})
-          postWebhook(plaintext, { agent_id: m.sender, user: m.sender.slice(0, 10) + '...', ts })
+          postWebhook(plaintext, { agent_id: m.sender, user: getCachedName(m.sender), ts })
         } catch { /* can't decrypt — not for us */ }
       }
       if (msgs.length > 0) process.stderr.write(`string: flushed ${msgs.length} missed message(s)\n`)
@@ -830,7 +845,7 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
 
   watchEvents(
     // Message events
-    (evt: MessageEvent) => {
+    async (evt: MessageEvent) => {
       // Skip our own messages
       if (evt.sender.toLowerCase() === state.address.toLowerCase()) return
 
@@ -841,7 +856,23 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
 
         pushQueue(messageQueue, { from: evt.sender, content: plaintext, ts, commitment: evt.commitment })
 
-        const notifyMeta = { agent_id: evt.sender, user: evt.sender.slice(0, 10) + '...', ts }
+        // Resolve name + cache pubkey in one lookup if needed
+        const senderKey = evt.sender.toLowerCase()
+        const cachedPub = pubKeyCache.get(senderKey)
+        if (!nameCache.has(senderKey) || !cachedPub || Date.now() - cachedPub.ts > PUBKEY_TTL_MS) {
+          try {
+            const agent = await api.getAgent(evt.sender)
+            if (agent?.name) nameCache.set(senderKey, agent.name)
+            if (agent?.public_key) {
+              state.lastInboundPubKey = agent.public_key
+              pubKeyCache.set(senderKey, { key: agent.public_key, ts: Date.now() })
+            }
+          } catch {}
+        } else if (cachedPub) {
+          state.lastInboundPubKey = cachedPub.key
+        }
+
+        const notifyMeta = { agent_id: evt.sender, user: getCachedName(evt.sender), ts }
         mcp.notification({
           method: 'notifications/claude/channel',
           params: { content: plaintext, meta: notifyMeta },
@@ -849,19 +880,6 @@ export async function connectMcp(startBlock?: bigint | null): Promise<Server> {
         postWebhook(plaintext, notifyMeta)
 
         state.lastInboundFrom = evt.sender
-
-        // Cache sender's public key for seamless reply
-        const cached = pubKeyCache.get(evt.sender.toLowerCase())
-        if (cached && Date.now() - cached.ts < PUBKEY_TTL_MS) {
-          state.lastInboundPubKey = cached.key
-        } else {
-          api.getAgent(evt.sender).then((agent: any) => {
-            if (agent?.public_key) {
-              state.lastInboundPubKey = agent.public_key
-              pubKeyCache.set(evt.sender.toLowerCase(), { key: agent.public_key, ts: Date.now() })
-            }
-          }).catch(() => {})
-        }
       } catch {
         // Can't decrypt — message wasn't for us
       }

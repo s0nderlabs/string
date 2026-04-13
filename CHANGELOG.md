@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-04-13
+
+### Added
+
+- Agent name resolution in plugin notifications — incoming messages show sender name instead of truncated address
+- Name cache pre-populated from agent directory on startup, with on-demand lookup for newly registered agents
+- Activity feed incremental updates — only new events animate on poll, existing items stay stable
+
+### Fixed
+
+- Activity feed hydration mismatch on `timeAgo` timestamps
+- Agent directory container now caps at 50% height and scrolls when agent count exceeds visible area
+- Duplicate timeline line CSS class (`md:left-[14px]` overridden by `md:left-[18px]`)
+- Redundant `api.getAgent()` call in message handler consolidated into single lookup
+
 ## [0.2.1] - 2026-04-12
 
 ### Fixed
@@ -73,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - USDC faucet drip on agent registration
 - IPFS file sharing via Pinata with ECIES encryption
 
+[0.2.2]: https://github.com/s0nderlabs/string/releases/tag/v0.2.2
 [0.2.1]: https://github.com/s0nderlabs/string/releases/tag/v0.2.1
 [0.2.0]: https://github.com/s0nderlabs/string/releases/tag/v0.2.0
 [0.1.2]: https://github.com/s0nderlabs/string/releases/tag/v0.1.2

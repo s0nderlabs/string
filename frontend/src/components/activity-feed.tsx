@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ActivityEvent, Agent } from "@/lib/api";
 import { truncateAddress, timeAgo, formatUSDC, cn } from "@/lib/utils";
 import { ActivityDetail } from "./activity-detail";
+
+function eventKey(e: ActivityEvent): string {
+  return e.txHash || `${e.type}-${e.ts}-${e.sender || e.buyer || e.agent || ""}-${e.recipient || e.provider || e.jobId || ""}`;
+}
 
 interface Props {
   events: ActivityEvent[];
@@ -73,6 +77,20 @@ function formatEvent(event: ActivityEvent, nameMap: Map<string, string>) {
 
 export function ActivityFeed({ events, nameMap, agents }: Props) {
   const [selected, setSelected] = useState<ActivityEvent | null>(null);
+  const seenKeys = useRef<Set<string>>(new Set());
+
+  const newKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of events) {
+      const k = eventKey(e);
+      if (!seenKeys.current.has(k)) s.add(k);
+    }
+    return s;
+  }, [events]);
+
+  useEffect(() => {
+    for (const e of events) seenKeys.current.add(eventKey(e));
+  }, [events]);
 
   return (
     <div className="flex flex-col h-full">
@@ -100,28 +118,39 @@ export function ActivityFeed({ events, nameMap, agents }: Props) {
             <div className="relative flex-1 overflow-y-auto min-h-0" style={{ scrollbarWidth: "none" }}>
               <div className="relative">
                 {/* Timeline line */}
-                <div className="absolute left-[10px] md:left-[14px] md:left-[18px] top-3 bottom-3 w-px bg-fg/[0.08]" />
+                <div className="absolute left-[10px] md:left-[18px] top-3 bottom-3 w-px bg-fg/[0.08]" />
 
-                {events.map((event, i) => (
-                  <button
-                    key={`${event.type}-${event.ts}-${i}`}
-                    className={cn(
-                      "group relative flex items-center gap-2 w-full text-left pl-8 md:pl-10 pr-3 md:pr-4 py-2.5 md:py-3",
-                      "hover:bg-surface/30 transition-colors duration-150",
-                      event.type === "job_settled" && "bg-surface/15"
-                    )}
-                    style={{ animation: `feedSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${i * 15}ms both` }}
-                    onClick={() => setSelected(event)}
-                  >
-                    <TimelineMarker type={event.type} />
-                    <div className="flex-1 min-w-0 text-[13px] font-[family-name:var(--font-mono)] truncate">
-                      {formatEvent(event, nameMap)}
-                    </div>
-                    <span className="text-[10px] text-muted font-[family-name:var(--font-mono)] flex-shrink-0 tabular-nums">
-                      {timeAgo(event.ts)}
-                    </span>
-                  </button>
-                ))}
+                {events.map((event, i) => {
+                  const k = eventKey(event);
+                  const isNew = newKeys.has(k);
+                  const isFirstLoad = seenKeys.current.size === 0;
+                  const animate = isFirstLoad
+                    ? `feedSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${i * 15}ms both`
+                    : isNew
+                      ? `feedSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) both`
+                      : "none";
+
+                  return (
+                    <button
+                      key={k}
+                      className={cn(
+                        "group relative flex items-center gap-2 w-full text-left pl-8 md:pl-10 pr-3 md:pr-4 py-2.5 md:py-3",
+                        "hover:bg-surface/30 transition-colors duration-150",
+                        event.type === "job_settled" && "bg-surface/15"
+                      )}
+                      style={{ animation: animate }}
+                      onClick={() => setSelected(event)}
+                    >
+                      <TimelineMarker type={event.type} />
+                      <div className="flex-1 min-w-0 text-[13px] font-[family-name:var(--font-mono)] truncate">
+                        {formatEvent(event, nameMap)}
+                      </div>
+                      <span className="text-[10px] text-muted font-[family-name:var(--font-mono)] flex-shrink-0 tabular-nums" suppressHydrationWarning>
+                        {timeAgo(event.ts)}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </motion.div>

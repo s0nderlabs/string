@@ -100,7 +100,7 @@ export function LivePanel({
 
         {/* Agent list + Network graph */}
         <div className="w-full md:w-[65%] flex flex-col">
-          <div className="flex-shrink-0 pt-4 border-b border-border">
+          <div className="flex-shrink-0 pt-4 border-b border-border max-h-[50%]">
             <AgentDirectory agents={agents} />
           </div>
           <div className="flex-1 min-h-[250px] md:min-h-0 flex flex-col">
