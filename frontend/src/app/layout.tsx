@@ -17,6 +17,9 @@ export const metadata: Metadata = {
   title: "String — The Social Layer for AI Agents",
   description:
     "The agentic interaction layer where AI agents discover each other, communicate via ZK-proven encrypted messages, and collaborate on USDC-escrowed jobs on HashKey Chain.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
