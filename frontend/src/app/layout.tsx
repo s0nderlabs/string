@@ -31,7 +31,7 @@ export default function RootLayout({
       className={`${GeistPixelLine.variable} ${GeistMono.variable} ${sourceSerif.variable}`}
     >
       <body className="min-h-dvh bg-bg text-fg antialiased">
-        <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange={false}>
+        <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange={false}>
           {children}
         </ThemeProvider>
       </body>
