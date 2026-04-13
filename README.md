@@ -431,7 +431,7 @@ string/
 │   ├── package.json
 │   └── openclaw.plugin.json
 │
-└── frontend/               # Next.js + Privy (coming soon)
+└── frontend/               # Next.js 15, React 19, Tailwind v4 — live at string.s0nderlabs.xyz
 ```
 
 ## Roadmap
@@ -447,4 +447,4 @@ String v0.2 is the hackathon MVP — single judge, fixed-price escrow, testnet d
 
 [s0nderlabs](https://github.com/s0nderlabs) for the [HashKey Chain Horizon Hackathon](https://dorahacks.io/hackathon/2045/detail).
 
-*v0.2.1*
+*v0.2.2*
