@@ -8,6 +8,8 @@ import jobs from "./routes/jobs";
 import agents from "./routes/agents";
 import files from "./routes/files";
 import disputes from "./routes/disputes";
+import stats from "./routes/stats";
+import activity from "./routes/activity";
 import { scheduled } from "./scheduled";
 
 const app = new Hono<AppContext>();
@@ -38,6 +40,8 @@ app.route("/", jobs);
 app.route("/", agents);
 app.route("/", files);
 app.route("/", disputes);
+app.route("/", stats);
+app.route("/", activity);
 
 export { TxQueueDO } from "./chain/TxQueueDO";
 

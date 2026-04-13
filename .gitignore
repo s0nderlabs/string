@@ -18,3 +18,4 @@ frontend/mockups/
 
 # Claude Code
 .claude/
+contracts/.next/

@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Base color tokens (must come before @theme) ── */
+:root {
+  --bg: #ffffff;
+  --fg: #0a0a0a;
+  --surface: #f5f5f5;
+  --muted: #888888;
+  --dim: #cccccc;
+  --border: #e5e5e5;
+}
+
+.dark {
+  --bg: #0f0f12;
+  --fg: #f0f0f3;
+  --surface: #1a1b1f;
+  --muted: #6b6b76;
+  --dim: #3a3a42;
+  --border: #2a2a2e;
+}
+
+/* ── Tailwind v4 theme mapping ── */
+@theme {
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-dim: var(--dim);
+  --color-border: var(--border);
+
+  --font-pixel: var(--font-geist-pixel-line), "GeistMono", ui-monospace, monospace;
+  --font-mono: var(--font-geist-mono), "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Base styles (inside @layer so they don't override utilities) ── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-pixel);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition:
+      background-color 0.5s var(--ease-out-expo),
+      color 0.3s ease;
+  }
+
+  ::selection {
+    background: var(--fg);
+    color: var(--bg);
+  }
+}
+
+/* ── Component styles (inside @layer so they don't override utilities) ── */
+@layer components {
+  /* Layered shadows — light mode */
+  .shadow-flat {
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+      0 0 0 1px var(--border);
+  }
+
+  .shadow-elevated {
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.06),
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 4px 8px rgba(0, 0, 0, 0.04),
+      0 12px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  .dark .shadow-flat {
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.02),
+      0 0 0 1px rgba(0, 0, 0, 0.25);
+  }
+
+  .dark .shadow-elevated {
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.03),
+      0 0 0 1px rgba(0, 0, 0, 0.1),
+      0 2px 2px rgba(0, 0, 0, 0.1),
+      0 4px 4px rgba(0, 0, 0, 0.1),
+      0 8px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Live pulse */
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4a7a5b;
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+
+  .dark .live-dot {
+    background: #6b9e7c;
+  }
+
+  /* Scroll indicator */
+  .scroll-hint {
+    animation: nudge 2s ease-in-out infinite;
+  }
+}
+
+/* ── Keyframes (outside layers, they don't affect specificity) ── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+@keyframes nudge {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(6px); }
+}
+
+@keyframes feedSlideIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes agentFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

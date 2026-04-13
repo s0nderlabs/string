@@ -238,14 +238,31 @@ app.get("/jobs/:id", async (c) => {
 
 app.get("/jobs", async (c) => {
   const address = c.req.query("address")?.toLowerCase();
-  if (!address) return c.json({ error: "address parameter required" }, 400);
+  const status = c.req.query("status")?.toLowerCase();
 
-  const result = await c.env.DB.prepare(
-    "SELECT * FROM jobs WHERE buyer = ?1 OR provider = ?1 ORDER BY created_at DESC LIMIT 50"
-  )
-    .bind(address)
-    .all();
+  let sql = "SELECT * FROM jobs";
+  const params: any[] = [];
+  const conditions: string[] = [];
+  let idx = 1;
 
+  if (address) {
+    conditions.push(`(buyer = ?${idx} OR provider = ?${idx})`);
+    params.push(address);
+    idx++;
+  }
+  if (status) {
+    conditions.push(`status = ?${idx}`);
+    params.push(status);
+    idx++;
+  }
+
+  if (conditions.length > 0) {
+    sql += " WHERE " + conditions.join(" AND ");
+  }
+
+  sql += " ORDER BY created_at DESC LIMIT 50";
+
+  const result = await c.env.DB.prepare(sql).bind(...params).all();
   return c.json({ jobs: result.results });
 });
 
